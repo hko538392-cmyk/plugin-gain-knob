@@ -1,0 +1,46 @@
+name: Build plugin
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    name: macOS (AU, VST3, Standalone)
+    runs-on: macos-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Configure (universal binary, Apple Silicon + Intel)
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+      - name: Build
+        run: >
+          cmake --build build --config Release --parallel
+          --target GainKnob_AU GainKnob_VST3 GainKnob_Standalone
+
+      - name: Ad-hoc sign and zip
+        run: |
+          mkdir -p dist
+          cd build/GainKnob_artefacts/Release
+          for bundle in "AU/Gain Knob.component" "VST3/Gain Knob.vst3" "Standalone/Gain Knob.app"; do
+            codesign --force --deep --sign - "$bundle"
+          done
+          ditto -c -k --keepParent "AU/Gain Knob.component"     "$GITHUB_WORKSPACE/dist/GainKnob-AU.zip"
+          ditto -c -k --keepParent "VST3/Gain Knob.vst3"        "$GITHUB_WORKSPACE/dist/GainKnob-VST3.zip"
+          ditto -c -k --keepParent "Standalone/Gain Knob.app"   "$GITHUB_WORKSPACE/dist/GainKnob-Standalone.zip"
+
+      - name: Upload plugins
+        uses: actions/upload-artifact@v4
+        with:
+          name: GainKnob-macOS
+          path: dist/*.zip
+          if-no-files-found: error
+        
